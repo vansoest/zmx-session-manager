@@ -16,11 +16,30 @@ type Session struct {
 	Cmd       string
 	Memory    uint64 // RSS of process tree in bytes
 	Uptime    int    // elapsed seconds from ps etime
+	Host      string // ssh alias from za hosts file; empty = this machine
 }
 
-// IsCurrent reports whether this session is running zsm.
+// IsCurrent reports whether this session is running zsm on this machine.
 func (s Session) IsCurrent() bool {
-	return s.Current || (s.Name != "" && s.Name == os.Getenv("ZMX_SESSION"))
+	return !s.IsRemote() && (s.Current || (s.Name != "" && s.Name == os.Getenv("ZMX_SESSION")))
+}
+
+// IsRemote reports whether this session lives on another host.
+func (s Session) IsRemote() bool {
+	return s.Host != ""
+}
+
+// Key returns a unique identifier for the session across hosts.
+func (s Session) Key() string {
+	return s.Host + "\x00" + s.Name
+}
+
+// DisplayName prefixes remote sessions with their host.
+func (s Session) DisplayName() string {
+	if s.IsRemote() {
+		return s.Host + ":" + s.Name
+	}
+	return s.Name
 }
 
 // ExistingSessionEnv disables prefix expansion for names returned by zmx list.
@@ -42,6 +61,22 @@ func AttachCommand(name string) string {
 	return "env ZMX_SESSION_PREFIX= zmx attach " + quoted
 }
 
+// AttachShellCommand returns the shell command attaching to name, wrapping
+// with ssh when the session is remote.
+func AttachShellCommand(host, name string) string {
+	if host == "" {
+		return AttachCommand(name)
+	}
+	return "ssh -t " + host + " " + AttachCommand(name)
+}
+
+// RemoteSessionArgv returns [ZMX_SESSION_PREFIX-, zmx, sub, args...] with the
+// prefix variable explicitly cleared so remote attach targets the exact
+// session regardless of the remote shell's zmx prefix config.
+func RemoteSessionArgv(prog string, sub string, args ...string) []string {
+	return append([]string{"ZMX_SESSION_PREFIX=", prog, sub}, args...)
+}
+
 // DisplayDir returns a shortened version of StartedIn, replacing $HOME with ~.
 func (s Session) DisplayDir() string {
 	home, _ := os.UserHomeDir()
@@ -58,9 +93,14 @@ func FetchSessions() ([]Session, error) {
 	if err != nil {
 		return nil, fmt.Errorf("zmx list: %w\n%s", err, out)
 	}
+	return parseList(string(out)), nil
+}
 
+// parseList parses zmx list output (one key=value tab-separated row per line,
+// '→' prefix marks the current session).
+func parseList(out string) []Session {
 	var sessions []Session
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+	for _, line := range strings.Split(out, "\n") {
 		line = strings.TrimSpace(line)
 		current := strings.HasPrefix(line, "→")
 		line = strings.TrimSpace(strings.TrimPrefix(line, "→"))
@@ -99,16 +139,26 @@ func FetchSessions() ([]Session, error) {
 			sessions = append(sessions, s)
 		}
 	}
-	return sessions, nil
+	return sessions
 }
 
-// KillSession runs `zmx kill <name>`.
-func KillSession(name string) error {
-	cmd := deps.command("zmx", "kill", name)
-	cmd.Env = ExistingSessionEnv()
-	out, err := cmd.CombinedOutput()
+// KillSession runs `zmx kill <name>`, over ssh when the target is remote.
+func KillSession(s Session) error {
+	var (
+		out []byte
+		err error
+	)
+	if s.IsRemote() {
+		args := sshArgs(s.Host, "kill")
+		args = append(args, s.Name)
+		out, err = runCombinedOutput("ssh", args...)
+	} else {
+		cmd := deps.command("zmx", "kill", s.Name)
+		cmd.Env = ExistingSessionEnv()
+		out, err = cmd.CombinedOutput()
+	}
 	if err != nil {
-		return fmt.Errorf("zmx kill %s: %w\n%s", name, err, out)
+		return fmt.Errorf("kill %s: %w\n%s", s.DisplayName(), err, out)
 	}
 	return nil
 }

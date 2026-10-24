@@ -86,18 +86,19 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 
 	case tea.KeySpace:
 		if m.cursor < len(visible) {
-			name := visible[m.cursor].Name
-			if m.selected[name] {
-				delete(m.selected, name)
+			key := visible[m.cursor].Key()
+			if m.selected[key] {
+				delete(m.selected, key)
 			} else {
-				m.selected[name] = true
+				m.selected[key] = true
 			}
 		}
 
 	case tea.KeyEnter:
 		if m.cursor < len(visible) {
-			if !visible[m.cursor].IsCurrent() {
-				m.attach = AttachRequest{Target: visible[m.cursor].Name, Mode: AttachAndReturn}
+			s := visible[m.cursor]
+			if !s.IsCurrent() {
+				m.attach = AttachRequest{Target: s.Name, Host: s.Host, Mode: AttachAndReturn}
 			}
 			return m, tea.Quit
 		}
@@ -115,8 +116,9 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.status = ""
 			case "e":
 				if m.cursor < len(visible) {
-					if !visible[m.cursor].IsCurrent() {
-						m.attach = AttachRequest{Target: visible[m.cursor].Name, Mode: AttachReplaceProcess}
+					s := visible[m.cursor]
+					if !s.IsCurrent() {
+						m.attach = AttachRequest{Target: s.Name, Host: s.Host, Mode: AttachReplaceProcess}
 					}
 					return m, tea.Quit
 				}
@@ -127,8 +129,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				}
 			case "c":
 				if m.cursor < len(visible) {
-					name := visible[m.cursor].Name
-					text := zmx.AttachCommand(name)
+					s := visible[m.cursor]
+					text := zmx.AttachShellCommand(s.Host, s.Name)
 					if err := zmx.CopyToClipboard(text); err != nil {
 						m.status = fmt.Sprintf("Copy failed: %v", err)
 						m.addLog(confirmStyle.Render(fmt.Sprintf("  ✗ Copy failed: %v", err)))
@@ -235,18 +237,18 @@ func (m *Model) toggleSelectAll(visible []Session) {
 	}
 	allSelected := true
 	for _, s := range visible {
-		if !m.selected[s.Name] {
+		if !m.selected[s.Key()] {
 			allSelected = false
 			break
 		}
 	}
 	if allSelected {
 		for _, s := range visible {
-			delete(m.selected, s.Name)
+			delete(m.selected, s.Key())
 		}
 	} else {
 		for _, s := range visible {
-			m.selected[s.Name] = true
+			m.selected[s.Key()] = true
 		}
 	}
 }
@@ -256,7 +258,7 @@ func (m *Model) pruneSelections() {
 	visible := m.visibleSessions()
 	allowed := make(map[string]bool, len(visible))
 	for _, s := range visible {
-		allowed[s.Name] = true
+		allowed[s.Key()] = true
 	}
 	for name := range m.selected {
 		if !allowed[name] {
@@ -342,10 +344,15 @@ func (m Model) handleConfirmKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.addLog(titleStyle.Render(fmt.Sprintf("Killing %d session(s)...", total)))
 
 		first := targets[0]
-		m.killQueue = targets[1:]
-		m.killNow = first
-		m.addLog(helpStyle.Render("  ⋯ " + first))
-		return m, killOneCmd(first)
+		rest := targets[1:]
+		keys := make([]string, 0, len(rest))
+		for _, t := range rest {
+			keys = append(keys, t.Key())
+		}
+		m.killQueue = keys
+		m.killNow = first.Key()
+		m.addLog(helpStyle.Render("  ⋯ " + first.DisplayName()))
+		return m, killOneCmd(first.Host, first.Name)
 	}
 	if isRune(msg, "n") {
 		m.state = stateNormal

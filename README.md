@@ -56,6 +56,24 @@ nix develop github:mdsakalu/zmx-session-manager
 
 [zmx](https://github.com/neurosnap/zmx) must be installed and available in your `PATH`. zsm is tested with zmx 0.7.0 and retains compatibility with the legacy `session_name`/`started_in` list format.
 
+## Multi-Host
+
+za extends zsm with remote hosts. Create `~/.config/za/hosts` (respects
+`$XDG_CONFIG_HOME`) with one ssh alias per line:
+
+```
+# ~/.config/za/hosts
+darkwing
+nas
+```
+
+Aliases resolve through your usual ssh config (`~/.ssh/config`). za lists
+local and remote sessions together (`ssh <host> zmx list`, fetched in
+parallel), and kill, preview, and attach are ssh-wrapped for remote rows.
+A host that is down shows one error in the activity log; remaining hosts
+still list. Rows display `host:name` for remote sessions. zsm ignores
+this file — upstream behavior is untouched.
+
 ## Key Bindings
 
 | Key | Action |

@@ -81,21 +81,46 @@ func attachToSession(zmxPath string, request tui.AttachRequest) error {
 	}
 	switch request.Mode {
 	case tui.AttachAndReturn:
-		cmd := exec.Command(zmxPath, "attach", request.Target)
+		var cmd *exec.Cmd
+		var label string
+		if request.Host != "" {
+			// Remote: only ssh must be on PATH locally; zmx runs on the host.
+			args := append([]string{"-t", request.Host, "env"}, zmx.RemoteSessionArgv("zmx", "attach", request.Target)...)
+			cmd = exec.Command("ssh", args...)
+			label = request.Host + ":" + request.Target
+		} else {
+			cmd = exec.Command(zmxPath, "attach", request.Target)
+			label = request.Target
+		}
 		cmd.Env = env
 		cmd.Stdin = os.Stdin
 		cmd.Stdout = os.Stdout
 		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: failed to attach to session %q: %v\n", request.Target, err)
-			fmt.Print("Press Enter to return to zsm...")
+			fmt.Fprintf(os.Stderr, "Error: failed to attach to session %q: %v\n", label, err)
+			fmt.Print("Press Enter to return to za...")
 			var input string
 			fmt.Scanln(&input)
 		}
 		return nil
 	case tui.AttachReplaceProcess:
+		if request.Host != "" {
+			args := append([]string{"ssh", "-t", request.Host, "env"}, zmx.RemoteSessionArgv("zmx", "attach", request.Target)...)
+			return syscall.Exec(sshPath(), args, env)
+		}
 		return syscall.Exec(zmxPath, []string{"zmx", "attach", request.Target}, env)
 	default:
 		return fmt.Errorf("unsupported attach mode %d", request.Mode)
 	}
+}
+
+// sshPath locates ssh for exec-replace attach; fatal if absent since remote
+// attach cannot proceed without it.
+func sshPath() string {
+	p, err := exec.LookPath("ssh")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Error: ssh not found in PATH (required for remote attach)")
+		os.Exit(1)
+	}
+	return p
 }

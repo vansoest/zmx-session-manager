@@ -15,6 +15,16 @@ import (
 // with all ANSI escape sequences stripped (except colors). Lines are NOT
 // truncated so that the caller can apply horizontal scrolling before display.
 func FetchPreview(name string, lines int) string {
+	return fetchPreviewFrom("", name, lines)
+}
+
+// FetchPreviewByName runs the history fetch on host ("" = this machine).
+func FetchPreviewByName(host string, name string, lines int) string {
+	return fetchPreviewFrom(host, name, lines)
+}
+
+// fetchPreviewFrom runs the history fetch on host ("" = this machine).
+func fetchPreviewFrom(host string, name string, lines int) string {
 	if lines < 1 {
 		lines = 1
 	}
@@ -22,7 +32,12 @@ func FetchPreview(name string, lines int) string {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	cmd := deps.commandContext(ctx, "zmx", "history", name, "--vt")
+	cmdName, args := "zmx", []string{"history", name, "--vt"}
+	if host != "" {
+		cmdName, args = "ssh", sshArgs(host, "history")
+		args = append(args, name, "--vt")
+	}
+	cmd := deps.commandContext(ctx, cmdName, args...)
 	cmd.Env = ExistingSessionEnv()
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {

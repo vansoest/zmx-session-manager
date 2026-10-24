@@ -231,7 +231,7 @@ func (m *Model) renderList(maxRows int) string {
 	for i := m.listOffset; i < end; i++ {
 		s := visible[i]
 		isCursor := i == m.cursor
-		isSelected := m.selected[s.Name]
+		isSelected := m.selected[s.Key()]
 
 		var indicator string
 		switch {
@@ -271,7 +271,7 @@ func (m *Model) renderList(maxRows int) string {
 		if nameWidth < 10 {
 			nameWidth = 10
 		}
-		name := truncate(s.Name, nameWidth)
+		name := truncate(s.DisplayName(), nameWidth)
 		paddedName := padRight(name, nameWidth)
 
 		style := normalStyle
@@ -321,7 +321,7 @@ func (m Model) renderHelp() string {
 	if m.state == stateConfirmKill {
 		targets := m.killTargets()
 		if len(targets) == 1 {
-			return confirmStyle.Render(fmt.Sprintf(" Kill %s? y/n ", targets[0]))
+			return confirmStyle.Render(fmt.Sprintf(" Kill %s? y/n ", targets[0].DisplayName()))
 		}
 		return confirmStyle.Render(fmt.Sprintf(" Kill %d sessions? y/n ", len(targets)))
 	}

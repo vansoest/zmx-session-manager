@@ -53,6 +53,7 @@ const (
 // AttachRequest is the action selected when the TUI exits.
 type AttachRequest struct {
 	Target string
+	Host   string // ssh alias for remote sessions; empty = this machine
 	Mode   AttachMode
 	// NewSession targets are user input and still need zmx's configured prefix.
 	NewSession bool
@@ -78,12 +79,12 @@ func (s sortMode) label() string {
 
 type sessionsMsg struct {
 	sessions []Session
-	err      error
+	errs     []error
 }
-
 type Session = zmx.Session
 
 type previewMsg struct {
+	host    string
 	name    string
 	content string
 }
@@ -91,6 +92,7 @@ type previewMsg struct {
 type statusClearMsg struct{}
 
 type killOneResultMsg struct {
+	host string
 	name string
 	err  error
 }
@@ -109,26 +111,38 @@ type allGoneMsg struct{}
 // Commands
 
 func fetchSessionsCmd() tea.Msg {
-	sessions, err := zmx.FetchSessions()
-	return sessionsMsg{sessions: sessions, err: err}
+	sessions, errs := zmx.FetchAll()
+	return sessionsMsg{sessions: sessions, errs: errs}
 }
 
 func fetchProcessInfoCmd(sessions []Session) tea.Cmd {
 	return func() tea.Msg {
-		return processInfoMsg{info: zmx.FetchProcessInfo(sessions)}
+		return processInfoMsg{info: zmx.FetchProcessInfo(localSessions(sessions))}
 	}
 }
 
-func fetchPreviewCmd(name string, lines int) tea.Cmd {
+// localSessions keeps process probing restricted to local rows; ssh'd ps
+// output for remote hosts is not worth the cost here.
+func localSessions(sessions []Session) []Session {
+	var out []Session
+	for _, s := range sessions {
+		if !s.IsRemote() {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func fetchPreviewCmd(host string, name string, lines int) tea.Cmd {
 	return func() tea.Msg {
-		return previewMsg{name: name, content: zmx.FetchPreview(name, lines)}
+		return previewMsg{host: host, name: name, content: zmx.FetchPreviewByName(host, name, lines)}
 	}
 }
 
-func killOneCmd(name string) tea.Cmd {
+func killOneCmd(host string, name string) tea.Cmd {
 	return func() tea.Msg {
-		err := zmx.KillSession(name)
-		return killOneResultMsg{name: name, err: err}
+		err := zmx.KillSession(zmx.Session{Host: host, Name: name})
+		return killOneResultMsg{host: host, name: name, err: err}
 	}
 }
 
@@ -275,7 +289,8 @@ func (m *Model) computeVisibleSessions() []Session {
 		lower := strings.ToLower(m.filterText)
 		for _, s := range m.sessions {
 			if strings.Contains(strings.ToLower(s.Name), lower) ||
-				strings.Contains(strings.ToLower(s.StartedIn), lower) {
+				strings.Contains(strings.ToLower(s.StartedIn), lower) ||
+				strings.Contains(strings.ToLower(s.Host), lower) {
 				filtered = append(filtered, s)
 			}
 		}
@@ -333,7 +348,7 @@ func computeListMetrics(sessions []Session) listMetrics {
 		clientW: 2,
 	}
 	for _, s := range sessions {
-		if w := runewidth.StringWidth(s.Name); w > metrics.nameW {
+		if w := runewidth.StringWidth(s.DisplayName()); w > metrics.nameW {
 			metrics.nameW = w
 		}
 		if w := runewidth.StringWidth(s.PID); w > metrics.pidW {
@@ -398,23 +413,29 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 	case sessionsMsg:
-		if msg.err != nil {
-			m.err = msg.err
+		for _, e := range msg.errs {
+			m.addLog(confirmStyle.Render("  ✗ " + e.Error()))
+		}
+		if len(msg.sessions) == 0 && len(msg.errs) > 0 {
+			m.err = msg.errs[0]
 			return m, nil
 		}
 		m.sessions = msg.sessions
 		m.markSessionsChanged()
 		live := make(map[string]bool, len(m.sessions))
 		for _, s := range m.sessions {
-			live[s.Name] = true
+			live[s.Key()] = true
 		}
-		for name := range m.selected {
-			if !live[name] {
-				delete(m.selected, name)
+		for key := range m.selected {
+			if !live[key] {
+				delete(m.selected, key)
 			}
 		}
 		m.clampCursor()
 		cmds := []tea.Cmd{fetchProcessInfoCmd(m.sessions)}
+		for _, e := range msg.errs {
+			m.addLog(helpStyle.Render("  ⋯ " + e.Error()))
+		}
 		visible := m.visibleSessions()
 		if len(visible) > 0 && m.cursor < len(visible) {
 			cmds = append(cmds, m.previewCmd())
@@ -426,7 +447,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case processInfoMsg:
 		updated := false
 		for i := range m.sessions {
-			if info, ok := msg.info[m.sessions[i].Name]; ok {
+			if info, ok := msg.info[m.sessions[i].Name]; ok && !m.sessions[i].IsRemote() {
 				m.sessions[i].Memory = info.Memory
 				m.sessions[i].Uptime = info.Uptime
 				updated = true
@@ -438,7 +459,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case previewMsg:
 		visible := m.visibleSessions()
-		if m.cursor < len(visible) && visible[m.cursor].Name == msg.name && !visible[m.cursor].IsCurrent() {
+		if m.cursor < len(visible) && visible[m.cursor].Key() == msg.host+"\x00"+msg.name && !visible[m.cursor].IsCurrent() {
 			m.preview = msg.content
 		}
 
@@ -447,7 +468,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.addLog(confirmStyle.Render("  ✗ " + msg.name))
 		} else {
 			m.addLog(statusStyle.Render("  ✓ " + msg.name))
-			m.killDoneNames = append(m.killDoneNames, msg.name)
+			m.killDoneNames = append(m.killDoneNames, msg.host+"\x00"+msg.name)
 		}
 		m.killNow = ""
 		if len(m.killQueue) > 0 {
@@ -455,7 +476,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.killQueue = m.killQueue[1:]
 			m.killNow = next
 			m.addLog(helpStyle.Render("  ⋯ " + next))
-			return m, killOneCmd(next)
+			return m, killQueueCmd(next)
 		}
 		if len(m.killDoneNames) > 0 {
 			m.addLog(logDimStyle.Render("  Waiting for cleanup..."))
@@ -517,20 +538,40 @@ func (m *Model) previewCmd() tea.Cmd {
 		m.preview = "(current session; preview hidden to avoid recursion)"
 		return nil
 	}
-	return fetchPreviewCmd(visible[m.cursor].Name, m.mainContentHeight(1))
+	s := visible[m.cursor]
+	return fetchPreviewCmd(s.Host, s.Name, m.mainContentHeight(1))
 }
 
-func (m *Model) killTargets() []string {
+// killTarget returns the full Session under the cursor or in the selection.
+// Selection keys are Session.Key() strings ("host\x00name").
+func (m *Model) killTargets() []zmx.Session {
+	var targets []zmx.Session
 	if len(m.selected) > 0 {
-		names := make([]string, 0, len(m.selected))
-		for name := range m.selected {
-			names = append(names, name)
+		for _, s := range m.sessions {
+			if m.selected[s.Key()] {
+				targets = append(targets, s)
+			}
 		}
-		return names
+		return targets
 	}
 	visible := m.visibleSessions()
 	if m.cursor < len(visible) {
-		return []string{visible[m.cursor].Name}
+		return []zmx.Session{visible[m.cursor]}
 	}
 	return nil
+}
+
+// killQueueHost/Name decode "host\x00name" queue labels for dispatching.
+func killQueueHost(key string) string {
+	host, _, _ := strings.Cut(key, "\x00")
+	return host
+}
+
+func killQueueName(key string) string {
+	_, name, _ := strings.Cut(key, "\x00")
+	return name
+}
+
+func killQueueCmd(key string) tea.Cmd {
+	return killOneCmd(killQueueHost(key), killQueueName(key))
 }

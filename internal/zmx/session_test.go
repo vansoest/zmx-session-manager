@@ -16,7 +16,7 @@ func TestExistingSessionCommandsDoNotApplyPrefixAgain(t *testing.T) {
 	deps.command = func(name string, args ...string) *exec.Cmd {
 		return exec.Command("sh", "-c", `test "${ZMX_SESSION_PREFIX}$1" = d.term`, "sh", args[1])
 	}
-	if err := KillSession("d.term"); err != nil {
+	if err := KillSession(Session{Name: "d.term"}); err != nil {
 		t.Errorf("kill targeted the wrong session: %v", err)
 	}
 	deps.commandContext = func(ctx context.Context, name string, args ...string) *exec.Cmd {
