@@ -303,6 +303,7 @@ func TestVisibleSessionsInvalidatesAfterFilterAndSortChange(t *testing.T) {
 	}
 	m.markSessionsChanged()
 
+	m.sortMode = sortByName
 	visible := m.visibleSessions()
 	if len(visible) != 2 || visible[0].Name != "alpha" {
 		t.Fatalf("unexpected initial ordering: %+v", visible)

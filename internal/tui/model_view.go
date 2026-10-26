@@ -271,8 +271,25 @@ func (m *Model) renderList(maxRows int) string {
 		if nameWidth < 10 {
 			nameWidth = 10
 		}
-		name := truncate(s.DisplayName(), nameWidth)
-		paddedName := padRight(name, nameWidth)
+		var paddedName string
+		name := truncate(s.Name, nameWidth)
+		if s.IsRemote() {
+			hostLabel := truncate(s.Host, nameWidth-1)
+			var hostStr string
+			if hs, ok := m.hostStyles[s.Host]; ok {
+				hostStr = hs.Render(hostLabel + ":")
+			} else {
+				hostStr = remoteHostStyle.Render(hostLabel + ":")
+			}
+			nameRest := nameWidth - runewidth.StringWidth(hostLabel) - 1
+			if nameRest < 4 {
+				nameRest = 4
+			}
+			// colored prefix is ANSI-wrapped; pad only the plain name part
+			paddedName = hostStr + padRight(truncate(s.Name, nameRest), nameRest)
+		} else {
+			paddedName = padRight(name, nameWidth)
+		}
 
 		style := normalStyle
 		if isCursor || isSelected {

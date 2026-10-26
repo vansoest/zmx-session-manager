@@ -63,8 +63,8 @@ za extends zsm with remote hosts. Create `~/.config/za/hosts` (respects
 
 ```
 # ~/.config/za/hosts
-darkwing
-nas
+darkwing:212
+nas:196
 ```
 
 Aliases resolve through your usual ssh config (`~/.ssh/config`). za lists
@@ -74,6 +74,14 @@ for remote rows (`ssh -t <host> zmx attach <name>`). Filter (`/`) matches
 host names too. A host that is down (or lacks zmx) shows one error in the
 activity log; remaining hosts still list. Rows display `host:name` for
 remote sessions. zsm ignores this file — upstream behavior is untouched.
+
+## Sorting And Host Colors
+
+Press `s` to cycle sort modes: name / clients / pid / memory / uptime /
+host. za starts sorted by uptime. The optional `:color` suffix in the
+hosts file tints that host's label in the list — any lipgloss color specs
+work: 256-color indices (`212`) or hex (`#ff8800`). Hosts without a color
+render in a subtle default tint.
 
 ## Key Bindings
 

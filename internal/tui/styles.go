@@ -72,6 +72,10 @@ var (
 	uptimeStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("109")) // muted blue
 
+	// Remote host prefix (za): subtle default when no color configured
+	remoteHostStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("110"))
+
 	// Filter match highlight
 	filterMatchStyle = lipgloss.NewStyle().
 				Foreground(lipgloss.Color("228")).

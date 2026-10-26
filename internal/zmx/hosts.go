@@ -22,9 +22,33 @@ func HostsFile() (string, bool) {
 	return "", false
 }
 
-// LoadHosts parses the za hosts file, one ssh alias per line.
-// '#' starts a comment; blank lines are skipped.
+// LoadHosts parses the za hosts file, one ssh alias per line, optionally
+// `alias:color`. '#' starts a comment; blank lines are skipped.
 func LoadHosts() []string {
+	var hosts []string
+	for _, line := range loadHostLines() {
+		if i := strings.LastIndex(line, ":"); i > 0 {
+			line = line[:i]
+		}
+		hosts = append(hosts, line)
+	}
+	return hosts
+}
+
+// LoadHostColors maps ssh alias -> color from the za hosts file lines with
+// an `alias:color` suffix.
+func LoadHostColors() map[string]string {
+	colors := map[string]string{}
+	for _, line := range loadHostLines() {
+		if i := strings.LastIndex(line, ":"); i > 0 {
+			colors[line[:i]] = line[i+1:]
+		}
+	}
+	return colors
+}
+
+// loadHostLines reads the za hosts file, stripping comments and blanks.
+func loadHostLines() []string {
 	path, ok := HostsFile()
 	if !ok {
 		return nil
@@ -33,17 +57,17 @@ func LoadHosts() []string {
 	if err != nil {
 		return nil
 	}
-	var hosts []string
+	var lines []string
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if i := strings.Index(line, "#"); i >= 0 {
 			line = strings.TrimSpace(line[:i])
 		}
 		if line != "" {
-			hosts = append(hosts, line)
+			lines = append(lines, line)
 		}
 	}
-	return hosts
+	return lines
 }
 
 // FetchAll merges local sessions with sessions fetched over ssh from the

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/mattn/go-runewidth"
 	"github.com/mdsakalu/zmx-session-manager/internal/zmx"
 )
@@ -38,6 +39,7 @@ const (
 	sortByPID
 	sortByMemory
 	sortByUptime
+	sortByHost
 	sortModeCount
 )
 
@@ -71,6 +73,8 @@ func (s sortMode) label() string {
 		return "memory"
 	case sortByUptime:
 		return "uptime"
+	case sortByHost:
+		return "host"
 	}
 	return ""
 }
@@ -187,6 +191,7 @@ type Model struct {
 	sortMode   sortMode
 	sortAsc    bool
 	attach     AttachRequest
+	hostStyles map[string]lipgloss.Style
 
 	newSessionName    string
 	newSessionDefault string
@@ -227,9 +232,16 @@ type listMetrics struct {
 }
 
 func initialModel() Model {
+	colors := zmx.LoadHostColors()
+	styles := make(map[string]lipgloss.Style, len(colors))
+	for host, color := range colors {
+		styles[host] = lipgloss.NewStyle().Foreground(lipgloss.Color(color))
+	}
 	return Model{
 		selected:          make(map[string]bool),
+		sortMode:          sortByUptime,
 		sortAsc:           true,
+		hostStyles:        styles,
 		previewWrap:       true,
 		sessionNameBase:   "session",
 		visibleCacheDirty: true,
@@ -325,6 +337,13 @@ func (m *Model) computeVisibleSessions() []Session {
 		slices.SortFunc(filtered, func(a, b Session) int {
 			if a.Memory != b.Memory {
 				return dir * cmp.Compare(a.Memory, b.Memory)
+			}
+			return cmp.Compare(a.Name, b.Name)
+		})
+	case sortByHost:
+		slices.SortFunc(filtered, func(a, b Session) int {
+			if a.Host != b.Host {
+				return dir * cmp.Compare(a.Host, b.Host)
 			}
 			return cmp.Compare(a.Name, b.Name)
 		})
