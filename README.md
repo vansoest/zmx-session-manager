@@ -68,11 +68,12 @@ nas
 ```
 
 Aliases resolve through your usual ssh config (`~/.ssh/config`). za lists
-local and remote sessions together (`ssh <host> zmx list`, fetched in
-parallel), and kill, preview, and attach are ssh-wrapped for remote rows.
-A host that is down shows one error in the activity log; remaining hosts
-still list. Rows display `host:name` for remote sessions. zsm ignores
-this file — upstream behavior is untouched.
+local and remote sessions together (`ssh <host> zmx list` via a login shell,
+fetched in parallel), and attach, kill, preview, and copy are ssh-wrapped
+for remote rows (`ssh -t <host> zmx attach <name>`). Filter (`/`) matches
+host names too. A host that is down (or lacks zmx) shows one error in the
+activity log; remaining hosts still list. Rows display `host:name` for
+remote sessions. zsm ignores this file — upstream behavior is untouched.
 
 ## Key Bindings
 

@@ -93,18 +93,29 @@ func nonNilErrs(errs []error) []error {
 func FetchSessionsFrom(host string) ([]Session, error) {
 	out, err := runCombinedOutput("ssh", sshArgs(host, "list")...)
 	if err != nil {
-		return nil, fmt.Errorf("ssh %s zmx list: %w\n%s", host, err, out)
+		return nil, fmt.Errorf("ssh %s zmx list: %w\n%s", host, err, shownErrorTail(out))
 	}
 	return parseList(string(out)), nil
 }
 
-// sshArgs builds the ssh invocation for a remote zmx subcommand, with options
-// that make headless use fail fast instead of prompting.
+// shownErrorTail trims warning spam from stderr mixed into ssh output, keeping
+// the last lines that carry the real error.
+func shownErrorTail(out []byte) string {
+	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
+	if len(lines) > 4 {
+		lines = lines[len(lines)-4:]
+	}
+	return strings.Join(lines, "\n")
+}
+
+// sshArgs builds the ssh invocation for a remote subcommand over a login
+// shell so profile PATHs resolve zmx under non-interactive ssh. Options make
+// headless use fail fast instead of prompting.
 func sshArgs(host string, sub string) []string {
 	return []string{
 		"-o", "ConnectTimeout=3",
 		"-o", "BatchMode=yes",
 		host,
-		"zmx", sub,
+		"sh", "-lc", "zmx " + sub,
 	}
 }
